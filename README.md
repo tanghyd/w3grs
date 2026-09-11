@@ -4,6 +4,13 @@
 
 The upstream TypeScript source is tracked as a Git submodule in `upstream/w3gjs` for parity tests, benchmarks, and future maintenance. The published crate contains the Rust library and a small fixture subset, not the full upstream replay corpus.
 
+## This fork
+
+`tanghyd/w3grs` is upstream `wakamex/w3grs` plus one patch, used by the replay warehouses `tanghyd/w3warehouse` and `wc3-gym-warehouse`.
+
+- **Unknown object codes are kept.** A build or train order whose code is in no mapping table lands in `players[].unknown` (`summary` and `order`), instead of being dropped. This covers custom-map objects, such as Legion TD towers, and a few melee order classes upstream never tracked: hero training and neutral shop orders.
+- The field is omitted when empty. Any replay with one of those orders gets it, melee included, so the JSON output differs from `w3gjs` there.
+
 ## Installation
 
 `w3grs` requires Rust 1.85 or newer.
