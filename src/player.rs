@@ -34,6 +34,11 @@ pub struct ObjectTracker {
 }
 
 impl ObjectTracker {
+    // Serde gate for the `unknown` bucket: an empty bucket omits the field.
+    pub fn is_empty(&self) -> bool {
+        self.summary.is_empty() && self.order.is_empty()
+    }
+
     fn push(&mut self, id: &str, ms: u32) {
         if let Some(count) = self.summary.get_mut(id) {
             *count += 1;
@@ -114,6 +119,10 @@ pub struct Player {
     pub upgrades: ObjectTracker,
     pub items: ObjectTracker,
     pub buildings: ObjectTracker,
+    // Fork patch (see README): codes in no mapping table — custom-map objects,
+    // hero training, neutral shop orders. Upstream drops these.
+    #[serde(skip_serializing_if = "ObjectTracker::is_empty", default)]
+    pub unknown: ObjectTracker,
     pub heroes: Vec<HeroInfo>,
     #[serde(skip)]
     hero_collector: FxHashMap<String, HeroCollectorInfo>,
@@ -153,6 +162,7 @@ impl Player {
             upgrades: ObjectTracker::default(),
             items: ObjectTracker::default(),
             buildings: ObjectTracker::default(),
+            unknown: ObjectTracker::default(),
             heroes: Vec::new(),
             hero_collector: FxHashMap::default(),
             hero_count: 0,
@@ -206,6 +216,8 @@ impl Player {
             self.buildings.push(action_id, game_time);
         } else if upgrade_name(action_id).is_some() {
             self.upgrades.push(action_id, game_time);
+        } else {
+            self.unknown.push(action_id, game_time);
         }
     }
 
@@ -218,6 +230,8 @@ impl Player {
             self.buildings.push(id, game_time);
         } else if let Some(id) = upgrade_id_for_order_id(order_id) {
             self.upgrades.push(id, game_time);
+        } else {
+            with_order_id_str(order_id, |id| self.unknown.push(id, game_time));
         }
     }
 
