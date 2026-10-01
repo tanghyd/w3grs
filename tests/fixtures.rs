@@ -105,6 +105,8 @@ fn serializes_high_level_output_with_w3gjs_field_names() {
     assert!(json.get("buildNumber").is_some());
     assert!(json.get("parseTime").is_some());
     assert!(json.get("winningTeamId").is_some());
+    assert!(json.get("leaves").is_some());
+    assert!(json.get("saverPlayerId").is_some());
     assert!(json.get("game_name").is_none());
     assert!(json.get("random_seed").is_none());
     assert!(json.get("game_type").is_none());

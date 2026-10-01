@@ -6,10 +6,11 @@ The upstream TypeScript source is tracked as a Git submodule in `upstream/w3gjs`
 
 ## This fork
 
-`tanghyd/w3grs` is upstream `wakamex/w3grs` plus one patch, used by the replay warehouses `tanghyd/w3warehouse` and `wc3-gym-warehouse`.
+`tanghyd/w3grs` is upstream `wakamex/w3grs` plus two patches, used by the replay warehouses `tanghyd/w3warehouse` and `wc3-gym-warehouse`.
 
 - **Unknown object codes are kept.** A build or train order whose code is in no mapping table lands in `players[].unknown` (`summary` and `order`), instead of being dropped. This covers custom-map objects, such as Legion TD towers, and a few melee order classes upstream never tracked: hero training and neutral shop orders.
 - The field is omitted when empty. Any replay with one of those orders gets it, melee included, so the JSON output differs from `w3gjs` there.
+- **Every leave block and the saver are kept.** `leaves` lists each leave block in file order, observers included: `playerId`, `timeMS` (the game time at the block), `reason` and `result`. `saverPlayerId` is the player id of the replay's host record, the player whose client wrote the file. `winningTeamId` is unchanged. On a client-written file its rules can name the saver the winner even when the saver left first, so a caller can pick the winner from `leaves` with its own rule. Both fields are new, so the JSON output differs from `w3gjs` there.
 
 ## Installation
 
