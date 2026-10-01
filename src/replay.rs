@@ -31,7 +31,7 @@ pub struct W3GReplay {
     observers: Vec<String>,
     chatlog: Vec<ChatMessage>,
     id: String,
-    leave_events: Vec<LeaveGameBlock>,
+    leave_events: Vec<Leave>,
     total_time_tracker: u32,
     time_segment_tracker: u32,
     player_action_track_interval: u32,
@@ -309,7 +309,9 @@ impl W3GReplay {
             GameDataBlock::PlayerChatMessage(chat) => {
                 self.handle_chat_message(chat, self.total_time_tracker);
             }
-            GameDataBlock::LeaveGame(leave) => self.leave_events.push(leave.clone()),
+            GameDataBlock::LeaveGame(leave) => {
+                self.leave_events.push(Leave::new(leave.clone(), self.total_time_tracker));
+            }
         }
     }
 
@@ -516,6 +518,7 @@ impl W3GReplay {
             duration,
             expansion,
             settings,
+            saver_player_id,
         ) = {
             let context = self
                 .context
@@ -554,6 +557,7 @@ impl W3GReplay {
                 context.subheader.replay_length_ms,
                 context.subheader.game_identifier == "PX3W",
                 settings,
+                meta.player_records.first().map_or(0, |host| host.player_id),
             )
         };
 
@@ -583,6 +587,8 @@ impl W3GReplay {
             expansion,
             parse_time: parse_start.elapsed().as_millis() as u64,
             winning_team_id: self.winning_team_id,
+            leaves: std::mem::take(&mut self.leave_events),
+            saver_player_id,
             settings,
         })
     }
@@ -762,7 +768,7 @@ impl GameDataSummaryVisitor for W3GReplay {
     }
 
     fn handle_leave_game(&mut self, leave: LeaveGameBlock) -> Result<()> {
-        self.leave_events.push(leave);
+        self.leave_events.push(Leave::new(leave, self.total_time_tracker));
         Ok(())
     }
 }
@@ -880,6 +886,12 @@ pub struct ParserOutput {
     pub parse_time: u64,
     #[serde(rename = "winningTeamId")]
     pub winning_team_id: i16,
+    // Fork patch (see README): every leave block in file order, observers included.
+    #[serde(default)]
+    pub leaves: Vec<Leave>,
+    // Fork patch (see README): the host record's player, whose client wrote the file.
+    #[serde(rename = "saverPlayerId", default)]
+    pub saver_player_id: u8,
     pub settings: ReplaySettings,
 }
 
@@ -932,6 +944,28 @@ pub enum ObserverMode {
     Referees,
     #[serde(rename = "NONE")]
     None,
+}
+
+/// One leave block and the game time it was read at.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Leave {
+    #[serde(rename = "playerId")]
+    pub player_id: u8,
+    #[serde(rename = "timeMS")]
+    pub time_ms: u32,
+    pub reason: String,
+    pub result: String,
+}
+
+impl Leave {
+    fn new(block: LeaveGameBlock, time_ms: u32) -> Self {
+        Self {
+            player_id: block.player_id,
+            time_ms,
+            reason: block.reason,
+            result: block.result,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1098,6 +1132,36 @@ mod tests {
         assert!(phased.phases.game_data_timeslots > 0);
         assert!(phased.phases.game_data_command_blocks > 0);
         assert!(phased.phases.game_data_actions > 0);
+    }
+
+    #[test]
+    fn leaves_are_every_leave_block_in_order_and_the_saver_is_the_host_record() {
+        let bytes = include_bytes!("../fixtures/replays/132/reforged1.w3g");
+        let parsed = W3GReplay::new().parse_bytes_detailed(bytes).unwrap();
+
+        // Walk the raw blocks: each leave block with the clock at that point.
+        let mut clock = 0u32;
+        let mut expected = Vec::new();
+        for block in &parsed.low_level.game_data_blocks {
+            match block {
+                GameDataBlock::Timeslot(timeslot) => clock += u32::from(timeslot.time_increment),
+                GameDataBlock::LeaveGame(leave) => {
+                    expected.push(Leave::new(leave.clone(), clock));
+                }
+                GameDataBlock::PlayerChatMessage(_) => {}
+            }
+        }
+        assert!(expected.len() >= 2);
+        assert_eq!(parsed.summary.leaves, expected);
+        let host = parsed.low_level.metadata.player_records[0].player_id;
+        assert_eq!(parsed.summary.saver_player_id, host);
+
+        let json = serde_json::to_value(&parsed.summary).unwrap();
+        assert_eq!(json["leaves"][0]["playerId"], expected[0].player_id);
+        assert_eq!(json["leaves"][0]["timeMS"], expected[0].time_ms);
+        assert_eq!(json["leaves"][0]["reason"], expected[0].reason);
+        assert_eq!(json["leaves"][0]["result"], expected[0].result);
+        assert_eq!(json["saverPlayerId"], host);
     }
 
     #[test]
