@@ -1101,6 +1101,32 @@ mod tests {
     }
 
     #[test]
+    fn last_action_ms_is_the_time_of_each_players_last_command_block() {
+        let bytes = include_bytes!("../fixtures/replays/132/reforged1.w3g");
+        let parsed = W3GReplay::new().parse_bytes_detailed(bytes).unwrap();
+
+        // Walk the raw blocks: the clock after each timeslot, last seen per player.
+        let mut clock = 0u32;
+        let mut last = FxHashMap::default();
+        for block in &parsed.low_level.game_data_blocks {
+            if let GameDataBlock::Timeslot(timeslot) = block {
+                clock += u32::from(timeslot.time_increment);
+                for command in &timeslot.command_blocks {
+                    last.insert(command.player_id, clock);
+                }
+            }
+        }
+
+        let json = serde_json::to_value(&parsed.summary).unwrap();
+        for (index, player) in parsed.summary.players.iter().enumerate() {
+            let expected = last[&player.id];
+            assert!(expected > 0 && expected <= parsed.summary.duration);
+            assert_eq!(player.current_time_played, expected, "{}", player.name);
+            assert_eq!(json["players"][index]["lastActionMs"], expected, "{}", player.name);
+        }
+    }
+
+    #[test]
     fn parses_netease_replay_high_level() {
         let bytes = include_bytes!("../fixtures/replays/132/netease_132.nwg");
         let mut parser = W3GReplay::new();

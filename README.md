@@ -6,10 +6,11 @@ The upstream TypeScript source is tracked as a Git submodule in `upstream/w3gjs`
 
 ## This fork
 
-`tanghyd/w3grs` is upstream `wakamex/w3grs` plus one patch, used by the replay warehouses `tanghyd/w3warehouse` and `wc3-gym-warehouse`.
+`tanghyd/w3grs` is upstream `wakamex/w3grs` plus two patches, used by the replay warehouses `tanghyd/w3warehouse` and `wc3-gym-warehouse`.
 
 - **Unknown object codes are kept.** A build or train order whose code is in no mapping table lands in `players[].unknown` (`summary` and `order`), instead of being dropped. This covers custom-map objects, such as Legion TD towers, and a few melee order classes upstream never tracked: hero training and neutral shop orders.
 - The field is omitted when empty. Any replay with one of those orders gets it, melee included, so the JSON output differs from `w3gjs` there.
+- **Each player's last command time is kept.** `players[].lastActionMs` is the game time in ms at the end of the timeslot that holds the player's last command block, any action kind. It is w3gjs's `currentTimePlayed`, which w3gjs uses for APM but leaves out of its JSON. A file that records no leave for a player can still show who stopped playing first.
 
 ## Installation
 

@@ -139,7 +139,8 @@ pub struct Player {
     last_retraining_time: u32,
     #[serde(skip)]
     pub last_action_was_deselect: bool,
-    #[serde(skip)]
+    // Fork patch (see README): game time in ms of the player's last command block.
+    #[serde(rename = "lastActionMs", default)]
     pub current_time_played: u32,
     pub apm: u32,
 }

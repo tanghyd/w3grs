@@ -118,6 +118,7 @@ fn serializes_high_level_output_with_w3gjs_field_names() {
     assert!(first_player.get("groupHotkeys").is_some());
     assert!(first_player.get("resourceTransfers").is_some());
     assert!(first_player.get("current_time_played").is_none());
+    assert!(first_player.get("lastActionMs").is_some());
 }
 
 #[test]
