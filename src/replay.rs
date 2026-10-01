@@ -8,7 +8,7 @@ use sha2::{Digest, Sha256};
 
 use crate::{
     Error, Result,
-    action::{Action, FourCC},
+    action::{Action, FourCC, Vec2},
     buffer::to_hex,
     convert::{game_version, map_filename},
     formatters::race_flag_formatter,
@@ -634,9 +634,10 @@ impl GameDataSummaryVisitor for W3GReplay {
         &mut self,
         player_id: u8,
         order_id: FourCC,
+        target: Vec2,
     ) -> Result<()> {
         if let Some(current_player) = self.players.get_mut(&player_id) {
-            current_player.handle_0x11_order_id(order_id, self.total_time_tracker);
+            current_player.handle_0x11_order_id(order_id, self.total_time_tracker, target);
         }
         Ok(())
     }
@@ -1021,8 +1022,10 @@ fn handle_action_for_player(action: &Action, current_player: &mut Player, total_
             }
             current_player.handle_0x10_order_id(*order_id, total_time_tracker);
         }
-        Action::UnitBuildingAbilityTargetPosition { order_id, .. } => {
-            current_player.handle_0x11_order_id(*order_id, total_time_tracker);
+        Action::UnitBuildingAbilityTargetPosition {
+            order_id, target, ..
+        } => {
+            current_player.handle_0x11_order_id(*order_id, total_time_tracker, *target);
         }
         Action::UnitBuildingAbilityTargetPositionObject { order_id, .. } => {
             current_player.handle_0x12_order_id(*order_id, total_time_tracker);
@@ -1132,6 +1135,67 @@ mod tests {
         assert!(phased.phases.game_data_timeslots > 0);
         assert!(phased.phases.game_data_command_blocks > 0);
         assert!(phased.phases.game_data_actions > 0);
+    }
+
+    #[test]
+    fn a_building_placement_keeps_its_target_position() {
+        use crate::mappings::{
+            building_id_for_order_id, item_id_for_order_id, unit_id_for_order_id,
+        };
+
+        let bytes = include_bytes!("../fixtures/replays/132/reforged1.w3g");
+        let parsed = W3GReplay::new().parse_bytes_detailed(bytes).unwrap();
+
+        // Walk the raw actions: each 0x11 order of a building, with its target, per player.
+        let mut expected: FxHashMap<u8, Vec<(String, Vec2)>> = FxHashMap::default();
+        for block in &parsed.low_level.game_data_blocks {
+            let GameDataBlock::Timeslot(timeslot) = block else { continue };
+            for command in &timeslot.command_blocks {
+                for action in &command.actions {
+                    let Action::UnitBuildingAbilityTargetPosition {
+                        order_id, target, ..
+                    } = action
+                    else {
+                        continue;
+                    };
+                    if !(0x41..=0x7a).contains(&order_id[3])
+                        || unit_id_for_order_id(*order_id).is_some()
+                        || item_id_for_order_id(*order_id).is_some()
+                    {
+                        continue;
+                    }
+                    if let Some(id) = building_id_for_order_id(*order_id) {
+                        expected
+                            .entry(command.player_id)
+                            .or_default()
+                            .push((id.to_string(), *target));
+                    }
+                }
+            }
+        }
+        assert!(expected.values().map(Vec::len).sum::<usize>() > 10);
+
+        for player in &parsed.summary.players {
+            let placed: Vec<(String, Vec2)> = player
+                .buildings
+                .order
+                .iter()
+                .filter_map(|o| Some((o.id.clone(), [o.x?, o.y?])))
+                .collect();
+            assert_eq!(placed, expected.remove(&player.id).unwrap_or_default());
+            // Other order kinds carry no position.
+            assert!(player.units.order.iter().all(|o| o.x.is_none() && o.y.is_none()));
+        }
+
+        let json = serde_json::to_value(&parsed.summary).unwrap();
+        let first = json["players"][0]["buildings"]["order"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|o| o.get("x").is_some())
+            .unwrap();
+        assert!(first["x"].is_number() && first["y"].is_number());
+        assert!(json["players"][0]["units"]["order"][0].get("x").is_none());
     }
 
     #[test]

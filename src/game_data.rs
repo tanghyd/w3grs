@@ -1,7 +1,7 @@
 //! Game data block parser port.
 
 use crate::{
-    action::{Action, ActionParser, FourCC, SummaryActionStats, SummaryActionVisitor},
+    action::{Action, ActionParser, FourCC, SummaryActionStats, SummaryActionVisitor, Vec2},
     buffer::StatefulBufferParser,
     error::{Error, Result},
 };
@@ -96,6 +96,7 @@ pub(crate) trait GameDataSummaryVisitor {
         &mut self,
         player_id: u8,
         order_id: FourCC,
+        target: Vec2,
     ) -> Result<()>;
     fn unit_building_ability_target_position_object(
         &mut self,
@@ -137,9 +138,13 @@ where
             .unit_building_ability_no_params(self.player_id, order_id)
     }
 
-    fn unit_building_ability_target_position(&mut self, order_id: FourCC) -> Result<()> {
+    fn unit_building_ability_target_position(
+        &mut self,
+        order_id: FourCC,
+        target: Vec2,
+    ) -> Result<()> {
         self.visitor
-            .unit_building_ability_target_position(self.player_id, order_id)
+            .unit_building_ability_target_position(self.player_id, order_id, target)
     }
 
     fn unit_building_ability_target_position_object(&mut self, order_id: FourCC) -> Result<()> {
