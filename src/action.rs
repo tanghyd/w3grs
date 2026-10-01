@@ -290,7 +290,11 @@ impl Action {
 
 pub(crate) trait SummaryActionVisitor {
     fn unit_building_ability_no_params(&mut self, order_id: FourCC) -> Result<()>;
-    fn unit_building_ability_target_position(&mut self, order_id: FourCC) -> Result<()>;
+    fn unit_building_ability_target_position(
+        &mut self,
+        order_id: FourCC,
+        target: Vec2,
+    ) -> Result<()>;
     fn unit_building_ability_target_position_object(&mut self, order_id: FourCC) -> Result<()>;
     fn give_item_to_unit(&mut self) -> Result<()>;
     fn unit_building_ability_two_target_positions(&mut self, order_id1: FourCC) -> Result<()>;
@@ -845,8 +849,9 @@ impl ActionParser {
             0x11 => {
                 parser.skip(2)?;
                 let order_id = parser.read_fourcc()?;
-                parser.skip(16)?;
-                visitor.unit_building_ability_target_position(order_id)?;
+                parser.skip(8)?;
+                let target = [parser.read_f32_le()?, parser.read_f32_le()?];
+                visitor.unit_building_ability_target_position(order_id, target)?;
                 true
             }
             0x12 => {
@@ -1517,6 +1522,10 @@ impl<'a> SummaryActionCursor<'a> {
             self.buffer[offset + 2],
             self.buffer[offset + 3],
         ])
+    }
+
+    fn read_f32_le(&mut self) -> Result<f32> {
+        Ok(f32::from_bits(self.read_u32_le()?))
     }
 
     fn skip(&mut self, byte_count: usize) -> Result<()> {

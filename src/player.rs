@@ -6,7 +6,7 @@ use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    action::{Action, FourCC},
+    action::{Action, FourCC, Vec2},
     convert::player_color,
     formatters::object_id_formatter,
     mappings::{
@@ -21,13 +21,18 @@ use crate::{
     types::{ItemId, Race},
 };
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ObjectOrderEntry {
     pub id: String,
     pub ms: u32,
+    // Fork patch (see README): the map position of a building placement order.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub x: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub y: Option<f32>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ObjectTracker {
     pub summary: HashMap<String, u32>,
     pub order: Vec<ObjectOrderEntry>,
@@ -40,6 +45,10 @@ impl ObjectTracker {
     }
 
     fn push(&mut self, id: &str, ms: u32) {
+        self.push_at(id, ms, None);
+    }
+
+    fn push_at(&mut self, id: &str, ms: u32, position: Option<Vec2>) {
         if let Some(count) = self.summary.get_mut(id) {
             *count += 1;
         } else {
@@ -48,6 +57,8 @@ impl ObjectTracker {
         self.order.push(ObjectOrderEntry {
             id: id.to_string(),
             ms,
+            x: position.map(|p| p[0]),
+            y: position.map(|p| p[1]),
         });
     }
 }
@@ -106,7 +117,7 @@ pub struct TransferResourcesActionWithPlayer {
     pub ms_elapsed: u32,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Player {
     pub id: u8,
     pub name: String,
@@ -221,13 +232,19 @@ impl Player {
         }
     }
 
-    fn handle_stringencoded_order_id(&mut self, order_id: FourCC, game_time: u32) {
+    // `position` is the target of a 0x11 order; only a building placement keeps it.
+    fn handle_stringencoded_order_id(
+        &mut self,
+        order_id: FourCC,
+        game_time: u32,
+        position: Option<Vec2>,
+    ) {
         if let Some(id) = unit_id_for_order_id(order_id) {
             self.units.push(id, game_time);
         } else if let Some(id) = item_id_for_order_id(order_id) {
             self.items.push(id, game_time);
         } else if let Some(id) = building_id_for_order_id(order_id) {
-            self.buildings.push(id, game_time);
+            self.buildings.push_at(id, game_time, position);
         } else if let Some(id) = upgrade_id_for_order_id(order_id) {
             self.upgrades.push(id, game_time);
         } else {
@@ -334,9 +351,9 @@ impl Player {
                     if self.race_detected.is_empty() {
                         self.detect_race_by_order_id(order_id);
                     }
-                    self.handle_stringencoded_order_id(order_id, game_time);
+                    self.handle_stringencoded_order_id(order_id, game_time, None);
                 }
-                _ => self.handle_stringencoded_order_id(order_id, game_time),
+                _ => self.handle_stringencoded_order_id(order_id, game_time, None),
             }
             self.actions.buildtrain += 1;
         } else {
@@ -359,10 +376,10 @@ impl Player {
         }
     }
 
-    pub(crate) fn handle_0x11_order_id(&mut self, order_id: FourCC, game_time: u32) {
+    pub(crate) fn handle_0x11_order_id(&mut self, order_id: FourCC, game_time: u32, target: Vec2) {
         self.currently_tracked_apm += 1;
         if is_string_encoded_order_id(order_id) {
-            self.handle_stringencoded_order_id(order_id, game_time);
+            self.handle_stringencoded_order_id(order_id, game_time, Some(target));
         } else if is_basic_action(&order_id) {
             self.actions.basic += 1;
         } else {
@@ -388,7 +405,7 @@ impl Player {
     pub(crate) fn handle_0x12_order_id(&mut self, order_id: FourCC, game_time: u32) {
         if is_string_encoded_order_id(order_id) {
             self.actions.ability += 1;
-            self.handle_stringencoded_order_id(order_id, game_time);
+            self.handle_stringencoded_order_id(order_id, game_time, None);
         } else if is_rightclick_action(&order_id) {
             self.actions.rightclick += 1;
         } else if is_basic_action(&order_id) {
